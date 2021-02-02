@@ -1,0 +1,112 @@
+---
+title: 'All The News Corpus (2013-2020)'
+author: "Bobby McHardy"
+date: "January 07, 2020"
+output:
+  html_document:
+    df_print: paged
+    toc: true
+    toc_float: true
+    toc_collapsed: true
+    toc_depth: 3
+    number_sections: true
+---
+
+```{r preppack, include=FALSE}
+library("tibble")
+library(plyr)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(gridExtra)
+library(corrplot)
+library(stringr)
+library(plotly)
+library(Hmisc)
+library(zoo)
+options(scipen = 999)
+rm(list = ls())
+```
+```{r dataload, warning=FALSE, include=FALSE}
+# COVID-19 average cases and deaths by state and county in week leading up to 2020 election
+data_news <- read.csv("all-the-news-2-1-table.csv")
+data_news$year.cont <- data_news$year + ((data_news$month - 1) / 12) + data_news$day / 365
+```
+
+```{r sentiment_weightedavg, message=FALSE, warning=FALSE, include=FALSE}
+# compute weighted average of title sentiment (with direction)
+data_news$title.sent <- ifelse((data_news$title.pos.sent + data_news$title.neg.sent + data_news$title.neu.sent) == 0, 0, (data_news$title.pos.sent - data_news$title.neg.sent) / (data_news$title.pos.sent + data_news$title.neg.sent + data_news$title.neu.sent))
+# compute weighted average of article sentiment (with direction)
+data_news$article.sent <- ifelse((data_news$article.pos.sent + data_news$article.neg.sent + data_news$article.neu.sent) == 0, 0, (data_news$article.pos.sent - data_news$article.neg.sent) / (data_news$article.pos.sent + data_news$article.neg.sent + data_news$article.neu.sent))
+# remove all the exact zero-weight sentiment (could be due to N/A content)
+data_news <- data_news %>% filter(!(title.sent == 0 && article.sent == 0))
+```
+
+```{r sentiment_weightedavg2, message=FALSE, warning=FALSE, include=FALSE}
+# compute weighted average of title sentiment (with direction)
+data_news$sent <- data_news$title.sent + data_news$article.sent
+```
+
+```{r viz_timeline_senti_aggregate4, echo=FALSE, message= FALSE, warning= FALSE}
+# build sample data for display
+data_news_sample <- data_news[sample(1:nrow(data_news), size = 100,
+                                                 prob = (data_news$sent)^2, replace = F), ]
+d_n_s_fox <- data_news_sample %>% filter(publication == "Fox News")
+d_n_s_nyt <- data_news_sample %>% filter(publication == "The New York Times")
+d_n_s_cnn <- data_news_sample %>% filter(publication == "CNN")
+# build chart
+fig <- plot_ly() %>%
+  layout(title = list(text = "Popular Media Emotion Between 2016 and 2020"))
+fig <- fig %>%
+    add_trace(data = d_n_s_fox, color = I("#002885"),
+                         x = ~sent, y = ~year.cont, yaxis = "y2", name = ~publication,
+                         text = paste0("<b>", d_n_s_fox$publication,
+                                    "</b><br><br>Article: <i>",
+                                    d_n_s_fox$title,
+                                    "</i><br>URL: <a href='",
+                                    d_n_s_fox$url, "'>",
+                                    substr(d_n_s_fox$url, 0, 30),
+                                    "...</a>"),
+                         hovertemplate = "%{text}") %>%
+    add_trace(data = d_n_s_nyt, color = I("#555555"),
+                         x = ~sent, y = ~year.cont, yaxis = "y2", name = ~publication,
+                         text = paste0("<b>", d_n_s_nyt$publication,
+                                    "</b><br><br>Article: <i>",
+                                    d_n_s_nyt$title,
+                                    "</i><br>URL: <a href='",
+                                    d_n_s_nyt$url, "'>",
+                                    substr(d_n_s_nyt$url, 0, 30),
+                                    "...</a>"),
+                         hovertemplate = "%{text}") %>%
+    add_trace(data = d_n_s_cnn, color = I("#EC2029"),
+                         x = ~sent, y = ~year.cont, yaxis = "y2", name = ~publication,
+                         text = paste0("<b>", d_n_s_cnn$publication,
+                                    "</b><br><br>Article: <i>",
+                                    d_n_s_cnn$title,
+                                    "</i><br>URL: <a href='",
+                                    d_n_s_cnn$url, "'>",
+                                    substr(d_n_s_cnn$url, 0, 30),
+                                    "...</a>"),
+                         hovertemplate = "%{text}") %>%
+  layout(
+    xaxis = list(title = "Article Emotion", tickmode = "array",
+                 nticks = 2, tickvals = c(-1, 1),
+                 ticktext = c("More Negative", "More Positive")),
+    xaxis2 = list(title = "Left"),
+    yaxis = list(title = "News Source"),
+    yaxis2 = list(title = "Year", overlaying = "y", side = "right", autotick = F, dtick = 1),
+    legend = list(x = 1.1)
+  )
+fig <- fig %>% add_trace(data = data_news %>% filter(publication == "Fox News"), color = I("#002885"),
+                         x = ~sent, name = "Fox", type = "violin", hoveron="points", box = list(visible = T))
+fig <- fig %>% add_trace(data = data_news %>% filter(publication == "The New York Times"), color = I("#555555"),
+                         x = ~sent, name = "NYT", type = "violin", hoveron="points", box = list(visible = T))
+fig <- fig %>% add_trace(data = data_news %>% filter(publication == "CNN"), color = I("#EC2029"),
+                         x = ~sent, name = "CNN", type = "violin", hoveron="points", box = list(visible = T))
+fig
+rm(d_n_s_cnn)
+rm(d_n_s_nyt)
+rm(d_n_s_fox)
+rm(data_news_sample)
+rm(fig)
+```

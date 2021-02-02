@@ -1,0 +1,131 @@
+---
+title: 'Exploration of All The News Corpus (2016-2020)'
+author: "Bobby McHardy"
+date: "February 2, 2021"
+output:
+  html_document:
+    df_print: paged
+    number_sections: yes
+    code_folding: hide
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+---
+
+```{r preppack, include=FALSE}
+library("tibble")
+library(plyr)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(gridExtra)
+library(corrplot)
+library(stringr)
+library(plotly)
+library(Hmisc)
+library(zoo)
+options(scipen = 999)
+rm(list = ls())
+```
+
+```{r dataload, include=FALSE}
+# load all-the-news-2-1 corpus
+data_news <- read.csv("all-the-news-2-1-table.csv")
+```
+
+```{r sentiment_weightedavg, message=FALSE, warning=FALSE, include=FALSE}
+# creating a continuous measure of time
+data_news$year.cont <- data_news$year + ((data_news$month - 1) / 12) + data_news$day / 365
+
+# computing weighted average of title sentiment (with valence direction)
+data_news$title.sent <- ifelse((data_news$title.pos.sent + data_news$title.neg.sent + data_news$title.neu.sent) == 0, 0, (data_news$title.pos.sent - data_news$title.neg.sent) / (data_news$title.pos.sent + data_news$title.neg.sent + data_news$title.neu.sent))
+
+# computing weighted average of article sentiment (with valence direction)
+data_news$article.sent <- ifelse((data_news$article.pos.sent + data_news$article.neg.sent + data_news$article.neu.sent) == 0, 0, (data_news$article.pos.sent - data_news$article.neg.sent) / (data_news$article.pos.sent + data_news$article.neg.sent + data_news$article.neu.sent))
+
+# removing all the exact zero-weight sentiment (most probably due to N/A content)
+data_news <- data_news %>% filter(!(title.sent == 0 && article.sent == 0))
+
+# computing weighted average of title sentiment (with direction)
+data_news$sent <- data_news$title.sent + data_news$article.sent
+```
+
+Research suggests that negative news leaves the reader more angry and fearful than it does informed (see [Soroka et al., 2015](https://doi.org/10.1177/0002716215569217) for a review). This may be most problematic because negative news is more quickly spread on social media than positive news ([Brady et al., 2017](https://doi.org/10.1073/pnas.1618923114)). These results have implications on the press' and social media's ability to accurately inform the public.
+
+```{r viz_timeline_senti_aggregate, message=FALSE, warning=FALSE}
+# build sample data for display
+data_news_sample <- data_news[sample(1:nrow(data_news), size = 132,
+                                                 prob = sqrt(abs(data_news$sent)), replace = F), ]
+d_n_s_fox <- data_news_sample %>% filter(publication == "Fox News")
+d_n_s_nyt <- data_news_sample %>% filter(publication == "The New York Times")
+d_n_s_cnn <- data_news_sample %>% filter(publication == "CNN")
+
+# build chart
+fig <- plot_ly() %>%
+  layout(title = list(text = "Popular Media Emotion Between 2016 and 2020"))
+fig <- fig %>%
+    add_trace(data = d_n_s_fox, color = I("#002885"),
+                         x = ~sent, y = ~year.cont, yaxis = "y2", name = ~publication,
+                         text = paste0("<b>", d_n_s_fox$publication,
+                                    "</b><br><br>Article: <i>",
+                                    d_n_s_fox$title,
+                                    "</i><br>URL: <a href='",
+                                    d_n_s_fox$url, "'>",
+                                    substr(d_n_s_fox$url, 0, 30),
+                                    "...</a>"),
+                         hovertemplate = "%{text}") %>%
+    add_trace(data = d_n_s_nyt, color = I("#555555"),
+                         x = ~sent, y = ~year.cont, yaxis = "y2", name = ~publication,
+                         text = paste0("<b>", d_n_s_nyt$publication,
+                                    "</b><br><br>Article: <i>",
+                                    d_n_s_nyt$title,
+                                    "</i><br>URL: <a href='",
+                                    d_n_s_nyt$url, "'>",
+                                    substr(d_n_s_nyt$url, 0, 30),
+                                    "...</a>"),
+                         hovertemplate = "%{text}") %>%
+    add_trace(data = d_n_s_cnn, color = I("#EC2029"),
+                         x = ~sent, y = ~year.cont, yaxis = "y2", name = ~publication,
+                         text = paste0("<b>", d_n_s_cnn$publication,
+                                    "</b><br><br>Article: <i>",
+                                    d_n_s_cnn$title,
+                                    "</i><br>URL: <a href='",
+                                    d_n_s_cnn$url, "'>",
+                                    substr(d_n_s_cnn$url, 0, 30),
+                                    "...</a>"),
+                         hovertemplate = "%{text}") %>%
+  layout(
+    xaxis = list(title = "Article Emotion", tickmode = "array",
+                 nticks = 2, tickvals = c(-1, 1),
+                 ticktext = c("More Negative", "More Positive")),
+    xaxis2 = list(title = "Left"),
+    yaxis = list(title = "News Source"),
+    yaxis2 = list(title = "Year", overlaying = "y", side = "right", autotick = F, dtick = 1),
+    legend = list(x = 1.1)
+  )
+fig <- fig %>% add_trace(data = data_news %>% filter(publication == "Fox News"), color = I("#002885"),
+                         x = ~sent, name = "Fox", type = "violin", hoveron="points", box = list(visible = T))
+fig <- fig %>% add_trace(data = data_news %>% filter(publication == "The New York Times"), color = I("#555555"),
+                         x = ~sent, name = "NYT", type = "violin", hoveron="points", box = list(visible = T))
+fig <- fig %>% add_trace(data = data_news %>% filter(publication == "CNN"), color = I("#EC2029"),
+                         x = ~sent, name = "CNN", type = "violin", hoveron="points", box = list(visible = T))
+fig
+```
+***NOTES:***
+
+* Data from the [*All the news* corpus](https://www.kaggle.com/snapcrack/all-the-news).
+* Sentiment scores were computed using Python's [Natural Lanugage Toolkit](https://www.nltk.org/).
+* The code use to compute all measures used in the above graphic can be viewed below.
+```{r sentiment_weightedavg_display, message=FALSE, warning=FALSE}
+# creating a continuous measure of time
+data_news$year.cont <- data_news$year + ((data_news$month - 1) / 12) + data_news$day / 365
+
+# computing weighted average of title sentiment (with valence direction)
+data_news$title.sent <- ifelse((data_news$title.pos.sent + data_news$title.neg.sent + data_news$title.neu.sent) == 0, 0, (data_news$title.pos.sent - data_news$title.neg.sent) / (data_news$title.pos.sent + data_news$title.neg.sent + data_news$title.neu.sent))
+
+# computing weighted average of article sentiment (with valence direction)
+data_news$article.sent <- ifelse((data_news$article.pos.sent + data_news$article.neg.sent + data_news$article.neu.sent) == 0, 0, (data_news$article.pos.sent - data_news$article.neg.sent) / (data_news$article.pos.sent + data_news$article.neg.sent + data_news$article.neu.sent))
+
+# computing weighted average of title sentiment (with direction)
+data_news$sent <- data_news$title.sent + data_news$article.sent
+```

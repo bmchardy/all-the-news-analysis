@@ -1,0 +1,205 @@
+---
+title: 'Exploration of All The News Corpus (2013-2020)'
+author: "Bobby McHardy"
+date: "January 06, 2020"
+output:
+  html_document:
+    df_print: paged
+    toc: true
+    toc_float: true
+    toc_collapsed: true
+    toc_depth: 3
+    number_sections: true
+---
+
+```{r preppack, include=FALSE}
+library("tibble")
+library(plyr)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(gridExtra)
+library(corrplot)
+library(stringr)
+library(plotly)
+library(Hmisc)
+library(zoo)
+options(scipen = 999)
+rm(list = ls())
+```
+
+## Loading in the data
+
+We will now load the CORD-19 `.csv` of our found tokens and their corresponding frequencies.
+
+```{r dataload, warning=FALSE}
+# COVID-19 average cases and deaths by state and county in week leading up to 2020 election
+data_news <- read.csv("all-the-news-2-1-table.csv")
+data_news$year.cont <- data_news$year + ((data_news$month - 1) / 12) + data_news$day / 365
+data_news
+#data_language$freq <- as.numeric(data_language$freq)
+```
+
+Let's check the correlation of pos, neg, neu sentiments between title and article.
+
+```{r correlations_1, message=FALSE, warning=FALSE}
+cor(data_news[4:9])
+```
+Compute weighted averages on sentiment
+
+```{r sentiment_weightedavg, message=FALSE, warning=FALSE}
+# compute weighted average of title sentiment (with direction)
+data_news$title.sent <- ifelse((data_news$title.pos.sent + data_news$title.neg.sent + data_news$title.neu.sent) == 0, 0, (data_news$title.pos.sent - data_news$title.neg.sent) / (data_news$title.pos.sent + data_news$title.neg.sent + data_news$title.neu.sent))
+# compute weighted average of article sentiment (with direction)
+data_news$article.sent <- ifelse((data_news$article.pos.sent + data_news$article.neg.sent + data_news$article.neu.sent) == 0, 0, (data_news$article.pos.sent - data_news$article.neg.sent) / (data_news$article.pos.sent + data_news$article.neg.sent + data_news$article.neu.sent))
+# remove all the exact zero-weight sentiment (could be due to N/A content)
+data_news <- data_news %>% filter(!(title.sent == 0 && article.sent == 0))
+```
+
+Now, we check correlations between weighted title and article sentiment.
+
+```{r correlations_2, message=FALSE, warning=FALSE}
+cor(data_news[13:14])
+```
+
+```{r viz_scatter_senticorr, message=FALSE, warning=FALSE}
+# build chart
+data_news %>% plot_ly(x = ~article.sent, y = ~title.sent,
+                          type = "scatter") %>%
+  layout(xaxis = list(range=c(-1,1)), yaxis = list(range=c(-1,1)))
+```
+
+Compute average of title and content.
+
+```{r sentiment_weightedavg2, message=FALSE, warning=FALSE}
+# compute weighted average of title sentiment (with direction)
+data_news$sent <- data_news$title.sent + data_news$article.sent
+```
+
+Let's check our new synthetic sentiment measure.
+
+```{r viz_histogram_sentiunidimensional, message=FALSE, warning=FALSE}
+# build chart
+data_news %>% plot_ly(x = ~sent,
+                          type = "histogram") %>%
+  layout(xaxis = list(range=c(-1,1)))
+```
+
+Display a timeline of sentiments, based on this new unidimensional sentiment model.
+
+```{r viz_timeline_senti_aggregate1, message=FALSE, warning=FALSE}
+# build chart
+data_news %>% plot_ly(x = ~sent, y = ~year, color=~publication, type = "scatter",
+                      text = paste0("<b>", data_news$publication,
+                                    "</b><br><br>Article: <i>",
+                                    data_news$title,
+                                    "</i><br>URL: <a href='",
+                                    data_news$url, "'>",
+                                    substr(data_news$url, 0, 30),
+                                    "...</a>"),
+                      hovertemplate = "%{text}") %>%
+  layout(xaxis = list(range=c(-1,1)), yaxis = list(range=c(2015,2021)))
+```
+
+```{r viz_timeline_senti_split1, message=FALSE, warning=FALSE}
+# build chart
+fig_cnn <- plot_ly(data_news %>% filter(publication == "CNN"),
+                   x = ~sent, y = ~year, name = "CNN", type = "scatter")
+fig_cnn <- fig_cnn %>% layout(xaxis = list(range=c(-1,1)), yaxis = list(range=c(2015,2021)))
+
+fig_nyt <- plot_ly(data_news %>% filter(publication == "The New York Times"),
+                   x = ~sent, y = ~year, name = "The New York Times", type = "scatter")
+fig_nyt <- fig_nyt %>% layout(xaxis = list(range=c(-1,1)), yaxis = list(range=c(2015,2021)))
+
+fig_fox <- plot_ly(data_news %>% filter(publication == "Fox News"),
+                   x = ~sent, y = ~year, name = "Fox News", type = "scatter")
+fig_fox <- fig_fox %>% layout(xaxis = list(range=c(-1,1)), yaxis = list(range=c(2015,2021)))
+
+plotly::subplot(fig_cnn, fig_nyt, fig_fox)
+
+rm(fig_cnn)
+rm(fig_nyt)
+rm(fig_fox)
+```
+
+```{r viz_timeline_senti_aggregate2, message=FALSE, warning=FALSE}
+# build chart
+fig <- plot_ly()
+fig <- fig %>% add_trace(data = data_news %>% filter(year == 2016), x = ~sent, name = "2016", type = "violin")
+fig <- fig %>% add_trace(data = data_news %>% filter(year == 2017), x = ~sent, name = "2017", type = "violin")
+fig <- fig %>% add_trace(data = data_news %>% filter(year == 2018), x = ~sent, name = "2018", type = "violin")
+fig <- fig %>% add_trace(data = data_news %>% filter(year == 2019), x = ~sent, name = "2019", type = "violin")
+fig <- fig %>% add_trace(data = data_news %>% filter(year == 2020), x = ~sent, name = "2020", type = "violin")
+fig <- fig %>% add_trace(data = data_news, x = ~sent, y = ~year, yaxis="y2", name = "Year") %>% 
+  layout(yaxis2 = list(overlaying = "y", side = "right"))
+fig
+rm(fig)
+```
+
+```{r viz_timeline_senti_aggregate3, message=FALSE, warning=FALSE}
+# build chart
+data_news$sent.transform <- ((data_news$sent)/(sqrt((data_news$sent)^2))) * abs(data_news$sent)^(1/5)
+data_news %>% plot_ly(x = ~year.cont, y = ~title.neg.sent, color=~publication, type = "scatter") %>%
+  layout(yaxis = list(range=c(-.1, 0.6)))
+#  layout(xaxis = list(range=c(-1,1)), yaxis = list(range=c(2015,2021)))
+```
+
+```{r viz_timeline_senti_aggregate4, message=FALSE, warning=FALSE}
+# build sample data for display
+data_news_sample <- data_news[sample(1:nrow(data_news), size = 100,
+                                                 prob = (data_news$sent)^2, replace = F), ]
+d_n_s_fox <- data_news_sample %>% filter(publication == "Fox News")
+d_n_s_nyt <- data_news_sample %>% filter(publication == "The New York Times")
+d_n_s_cnn <- data_news_sample %>% filter(publication == "CNN")
+# build chart
+fig <- plot_ly() %>%
+  layout(title = list(text = "Popular Media Emotion Between 2016 and 2020"))
+fig <- fig %>%
+    add_trace(data = d_n_s_fox, color = I("#002885"),
+                         x = ~sent, y = ~year.cont, yaxis = "y2", name = ~publication,
+                         text = paste0("<b>", d_n_s_fox$publication,
+                                    "</b><br><br>Article: <i>",
+                                    d_n_s_fox$title,
+                                    "</i><br>URL: <a href='",
+                                    d_n_s_fox$url, "'>",
+                                    substr(d_n_s_fox$url, 0, 30),
+                                    "...</a>"),
+                         hovertemplate = "%{text}") %>%
+    add_trace(data = d_n_s_nyt, color = I("#555555"),
+                         x = ~sent, y = ~year.cont, yaxis = "y2", name = ~publication,
+                         text = paste0("<b>", d_n_s_nyt$publication,
+                                    "</b><br><br>Article: <i>",
+                                    d_n_s_nyt$title,
+                                    "</i><br>URL: <a href='",
+                                    d_n_s_nyt$url, "'>",
+                                    substr(d_n_s_nyt$url, 0, 30),
+                                    "...</a>"),
+                         hovertemplate = "%{text}") %>%
+    add_trace(data = d_n_s_cnn, color = I("#EC2029"),
+                         x = ~sent, y = ~year.cont, yaxis = "y2", name = ~publication,
+                         text = paste0("<b>", d_n_s_cnn$publication,
+                                    "</b><br><br>Article: <i>",
+                                    d_n_s_cnn$title,
+                                    "</i><br>URL: <a href='",
+                                    d_n_s_cnn$url, "'>",
+                                    substr(d_n_s_cnn$url, 0, 30),
+                                    "...</a>"),
+                         hovertemplate = "%{text}") %>%
+  layout(
+    xaxis = list(title = "Article Emotion", tickmode = "array",
+                 nticks = 2, tickvals = c(-1, 1),
+                 ticktext = c("More Negative", "More Positive")),
+    xaxis2 = list(title = "Left"),
+    yaxis = list(title = "News Source"),
+    yaxis2 = list(title = "Year", overlaying = "y", side = "right", autotick = F, dtick = 1),
+    legend = list(x = 1.1)
+  )
+fig <- fig %>% add_trace(data = data_news %>% filter(publication == "Fox News"), color = I("#002885"),
+                         x = ~sent, name = "Fox", type = "violin", hoveron="points", box = list(visible = T))
+fig <- fig %>% add_trace(data = data_news %>% filter(publication == "The New York Times"), color = I("#555555"),
+                         x = ~sent, name = "NYT", type = "violin", hoveron="points", box = list(visible = T))
+fig <- fig %>% add_trace(data = data_news %>% filter(publication == "CNN"), color = I("#EC2029"),
+                         x = ~sent, name = "CNN", type = "violin", hoveron="points", box = list(visible = T))
+fig
+rm(fig)
+```
